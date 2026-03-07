@@ -119,6 +119,10 @@ def parse_payout_email(body: str) -> dict:
     clean_text = "\n".join(clean)
 
     # Payout date
+    # DEBUG — remove after fixing
+    print("📧 RAW BODY PREVIEW:")
+    print(clean_text[:2000])  # ← ADD THESE TWO LINES HERE
+
     date_match  = re.search(r"processed by CDC\* on \*(.+?)\*", clean_text)
     raw_date    = date_match.group(1).strip() if date_match else None
     payout_date = datetime.strptime(raw_date, "%d %b %Y").strftime("%Y-%m-%d") if raw_date else "N/A"

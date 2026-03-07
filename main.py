@@ -124,8 +124,7 @@ def parse_payout_email(body: str) -> dict:
     payout_date = datetime.strptime(raw_date, "%d %b %Y").strftime("%Y-%m-%d") if raw_date else "N/A"
 
     # Products — "5251230183_Aj1 Low Denim Star Blue -Uk 8 ₹9,100"
-    products_raw = re.findall(r"(\d+)_([^\n₹]+?)\s+(₹[\d,]+)", clean_text)
-
+    products_raw = re.findall(r"(\d+)_([^₹]+?)(₹[\d,]+)", clean_text)
     def to_int(rupee_str: str) -> int:
         return int(rupee_str.replace("₹", "").replace(",", ""))
 

@@ -27,4 +27,6 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
+          SHEETY_URL: ${{ secrets.SHEETY_URL }}          # ← add this
+          SHEETY_TOKEN: ${{ secrets.SHEETY_TOKEN }}
         run: python main.py

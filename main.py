@@ -108,8 +108,6 @@ def fetch_latest_from(mail: imaplib.IMAP4_SSL, sender: str) -> dict | None:
 
 def parse_payout_email(body: str) -> dict:
     # Deduplicate repeated lines from forwarded email copies
-    print("Email Body")
-    print(body)
     lines = body.splitlines()
     seen, clean = set(), []
     for line in lines:
@@ -121,28 +119,40 @@ def parse_payout_email(body: str) -> dict:
     clean_text = "\n".join(clean)
 
     # Payout date
-    # DEBUG — remove after fixing
-    print("📧 RAW BODY PREVIEW:")
-    print(clean_text[:2000])  # ← ADD THESE TWO LINES HERE
-
-    date_match  = re.search(r"processed by CDC\* on \*(.+?)\*", clean_text)
+    date_match  = re.search(r"processed by CDC\* on \*(\d{2} \w+ \d{4})\*", clean_text)
     raw_date    = date_match.group(1).strip() if date_match else None
     payout_date = datetime.strptime(raw_date, "%d %b %Y").strftime("%Y-%m-%d") if raw_date else "N/A"
 
-    # Products — "5251230183_Aj1 Low Denim Star Blue -Uk 8 ₹9,100"
-    products_raw = re.findall(r"(\d+)_([^₹]+?)(₹[\d,]+)", clean_text)
     def to_int(rupee_str: str) -> int:
         return int(rupee_str.replace("₹", "").replace(",", ""))
 
-    products = [
-        {
-            "id":         pid,
-            "name":       name.strip(),
-            "amount_str": amt,
-            "amount_int": to_int(amt)
-        }
-        for pid, name, amt in products_raw
-    ]
+    # FORMAT 1: "526010733_Aj1 Low Sail College Grey Rattan -Uk 8₹8,315"
+    products_raw = re.findall(r"(\d+)_([^₹]+?)(₹[\d,]+)", clean_text)
+    if products_raw:
+        print("📋 Detected Format: Detailed (barcode_name₹amount)")
+        products = [
+            {
+                "id":         pid,
+                "name":       name.strip(),
+                "amount_str": amt,
+                "amount_int": to_int(amt)
+            }
+            for pid, name, amt in products_raw
+        ]
+
+    else:
+        # FORMAT 2: "5241011275 ₹8,700" (barcode space amount, no name)
+        products_raw = re.findall(r"(\d{10})\s+(₹[\d,]+)", clean_text)
+        print("📋 Detected Format: Simple (barcode ₹amount)")
+        products = [
+            {
+                "id":         pid,
+                "name":       "N/A",
+                "amount_str": amt,
+                "amount_int": to_int(amt)
+            }
+            for pid, amt in products_raw
+        ]
 
     # Total
     total_match = re.search(r"Total Payout\*\s+\*(₹[\d,]+)\*", clean_text)
@@ -316,4 +326,3 @@ def main():
 
 
 main()
-

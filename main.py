@@ -9,16 +9,15 @@ from supabase import create_client, Client
 
 
 # --- CONFIG (from GitHub Actions Secrets) ---
-EMAIL_ACCOUNT = os.environ["GMAIL_USER"]
-APP_PASSWORD  = os.environ["GMAIL_PASSWORD"]
-TARGET_SENDER = "accounts@crepdogcrew.com"
-IMAP_SERVER   = "imap.gmail.com"
+EMAIL_ACCOUNT    = os.environ["GMAIL_USER"]
+APP_PASSWORD     = os.environ["GMAIL_PASSWORD"]
+TARGET_SENDER    = "accounts@crepdogcrew.com"
+IMAP_SERVER      = "imap.gmail.com"
 
-SUPABASE_URL  = os.environ["SUPABASE_URL"]
-SUPABASE_KEY  = os.environ["SUPABASE_KEY"]
+SUPABASE_URL     = os.environ["SUPABASE_URL"]
+SUPABASE_KEY     = os.environ["SUPABASE_KEY"]
 
-SHEETY_URL    = os.environ["SHEETY_URL"]    # e.g. https://api.sheety.co/YOUR_ID/yourSheet/sheet1
-SHEETY_TOKEN  = os.environ["SHEETY_TOKEN"]  # bearer token you set in Sheety dashboard
+APPS_SCRIPT_URL  = os.environ["APPS_SCRIPT_URL"]  # Google Apps Script webhook URL
 
 
 # --- SUPABASE CLIENT ---
@@ -139,7 +138,6 @@ def parse_payout_email(body: str) -> dict:
             }
             for pid, name, amt in products_raw
         ]
-
     else:
         # FORMAT 2: "5241011275 ₹8,700" (barcode space amount, no name)
         products_raw = re.findall(r"(\d{10})\s+(₹[\d,]+)", clean_text)
@@ -178,36 +176,29 @@ def parse_payout_email(body: str) -> dict:
 
 
 # ──────────────────────────────────────────
-#  SHEETY WRITE
+#  GOOGLE SHEETS VIA APPS SCRIPT WEBHOOK
 # ──────────────────────────────────────────
 
 def write_to_sheets(parsed: dict, validated_barcodes: set):
-    print("\n📊 Writing to Google Sheets via Sheety...")
-
-    headers = {
-        "Authorization": f"Bearer {SHEETY_TOKEN}",
-        "Content-Type":  "application/json"
-    }
-
-    # Sheety requires the key to match your sheet tab name
-    # e.g. if your tab is "Sheet1" the key is "sheet1"
-    tab_name = SHEETY_URL.rstrip("/").split("/")[-1]
+    print("\n📊 Writing to Google Sheets via Apps Script...")
 
     rows_written = 0
     for product in parsed["products"]:
         validation = "Validated" if product["id"] in validated_barcodes else "Not Validated"
 
         payload = {
-            tab_name: {
-                "date":        parsed["payout_date"],  # A
-                "barcode":     product["id"],           # B
-                "description": product["name"],         # C
-                "amount":      product["amount_str"],   # D
-                "validation":  validation               # E
-            }
+            "date":        parsed["payout_date"],  # A
+            "barcode":     product["id"],           # B
+            "description": product["name"],         # C
+            "amount":      product["amount_str"],   # D
+            "validation":  validation               # E
         }
 
-        response = requests.post(SHEETY_URL, json=payload, headers=headers)
+        response = requests.post(
+            APPS_SCRIPT_URL,
+            json=payload,
+            headers={"Content-Type": "application/json"}
+        )
 
         if response.status_code == 200:
             rows_written += 1

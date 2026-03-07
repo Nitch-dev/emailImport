@@ -108,6 +108,8 @@ def fetch_latest_from(mail: imaplib.IMAP4_SSL, sender: str) -> dict | None:
 
 def parse_payout_email(body: str) -> dict:
     # Deduplicate repeated lines from forwarded email copies
+    print("Email Body")
+    print(body)
     lines = body.splitlines()
     seen, clean = set(), []
     for line in lines:
@@ -314,3 +316,4 @@ def main():
 
 
 main()
+

@@ -29,4 +29,5 @@ jobs:
           GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
           SHEETY_URL: ${{ secrets.SHEETY_URL }}          # ← add this
           SHEETY_TOKEN: ${{ secrets.SHEETY_TOKEN }}
+          APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
         run: python main.py

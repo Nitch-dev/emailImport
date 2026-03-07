@@ -3,6 +3,7 @@ import email
 from email.header import decode_header
 import re
 import os
+import requests
 from datetime import datetime
 from supabase import create_client, Client
 
@@ -16,13 +17,16 @@ IMAP_SERVER   = "imap.gmail.com"
 SUPABASE_URL  = os.environ["SUPABASE_URL"]
 SUPABASE_KEY  = os.environ["SUPABASE_KEY"]
 
+SHEETY_URL    = os.environ["SHEETY_URL"]    # e.g. https://api.sheety.co/YOUR_ID/yourSheet/sheet1
+SHEETY_TOKEN  = os.environ["SHEETY_TOKEN"]  # bearer token you set in Sheety dashboard
+
 
 # --- SUPABASE CLIENT ---
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 # ──────────────────────────────────────────
-#  SUPABASE STATE  (replaces last_seen_id)
+#  SUPABASE STATE  (tracks last seen email)
 # ──────────────────────────────────────────
 
 def get_last_seen_id() -> str:
@@ -159,11 +163,54 @@ def parse_payout_email(body: str) -> dict:
 
 
 # ──────────────────────────────────────────
+#  SHEETY WRITE
+# ──────────────────────────────────────────
+
+def write_to_sheets(parsed: dict, validated_barcodes: set):
+    print("\n📊 Writing to Google Sheets via Sheety...")
+
+    headers = {
+        "Authorization": f"Bearer {SHEETY_TOKEN}",
+        "Content-Type":  "application/json"
+    }
+
+    # Sheety requires the key to match your sheet tab name
+    # e.g. if your tab is "Sheet1" the key is "sheet1"
+    tab_name = SHEETY_URL.rstrip("/").split("/")[-1]
+
+    rows_written = 0
+    for product in parsed["products"]:
+        validation = "Validated" if product["id"] in validated_barcodes else "Not Validated"
+
+        payload = {
+            tab_name: {
+                "date":        parsed["payout_date"],  # A
+                "barcode":     product["id"],           # B
+                "description": product["name"],         # C
+                "amount":      product["amount_str"],   # D
+                "validation":  validation               # E
+            }
+        }
+
+        response = requests.post(SHEETY_URL, json=payload, headers=headers)
+
+        if response.status_code == 200:
+            rows_written += 1
+            print(f"   ✅ {product['id']} | {product['name']} | {product['amount_str']} | {validation}")
+        else:
+            print(f"   ❌ Failed for {product['id']} — {response.status_code}: {response.text}")
+
+    print(f"✅ {rows_written} rows written to Sheets.\n")
+
+
+# ──────────────────────────────────────────
 #  SUPABASE SYNC
 # ──────────────────────────────────────────
 
-def update_supabase(parsed: dict):
+def update_supabase(parsed: dict) -> set:
+    """Updates Supabase and returns a set of validated barcodes for Sheets."""
     print("\n🔄 Updating Supabase...")
+    validated_barcodes = set()
 
     for product in parsed["products"]:
         barcode = product["id"]
@@ -178,10 +225,11 @@ def update_supabase(parsed: dict):
         )
 
         if not sales_check.data:
-            print(f"   🚫 Barcode {barcode} NOT found in sales — skipping")
-            continue
+            print(f"   🚫 Barcode {barcode} NOT found in sales — will mark Not Validated in Sheets")
+            continue  # not added to validated_barcodes
 
         print(f"   ✔️  Barcode {barcode} validated in sales table")
+        validated_barcodes.add(barcode)
 
         # STEP 2: Fetch row from payment_trackers
         response = (
@@ -219,6 +267,7 @@ def update_supabase(parsed: dict):
             print(f"   ❌ Update failed for barcode {barcode}")
 
     print("✅ Supabase sync complete.\n")
+    return validated_barcodes
 
 
 # ──────────────────────────────────────────
@@ -256,8 +305,9 @@ def main():
     # New email detected!
     print("\n📬 NEW EMAIL DETECTED!")
     set_last_seen_id(current_id)
-    parsed = parse_payout_email(result["body"])
-    update_supabase(parsed)
+    parsed             = parse_payout_email(result["body"])
+    validated_barcodes = update_supabase(parsed)
+    write_to_sheets(parsed, validated_barcodes)
 
 
 main()

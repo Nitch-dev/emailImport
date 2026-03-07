@@ -9,15 +9,15 @@ from supabase import create_client, Client
 
 
 # --- CONFIG (from GitHub Actions Secrets) ---
-EMAIL_ACCOUNT    = os.environ["GMAIL_USER"]
-APP_PASSWORD     = os.environ["GMAIL_PASSWORD"]
-TARGET_SENDER    = "accounts@crepdogcrew.com"
-IMAP_SERVER      = "imap.gmail.com"
+EMAIL_ACCOUNT   = os.environ["GMAIL_USER"]
+APP_PASSWORD    = os.environ["GMAIL_PASSWORD"]
+TARGET_SENDER   = "accounts@crepdogcrew.com"
+IMAP_SERVER     = "imap.gmail.com"
 
-SUPABASE_URL     = os.environ["SUPABASE_URL"]
-SUPABASE_KEY     = os.environ["SUPABASE_KEY"]
+SUPABASE_URL    = os.environ["SUPABASE_URL"]
+SUPABASE_KEY    = os.environ["SUPABASE_KEY"]
 
-APPS_SCRIPT_URL  = os.environ["APPS_SCRIPT_URL"]  # Google Apps Script webhook URL
+APPS_SCRIPT_URL = os.environ["APPS_SCRIPT_URL"]  # Google Apps Script webhook URL
 
 
 # --- SUPABASE CLIENT ---
@@ -76,6 +76,7 @@ def get_body(msg) -> str:
 
 
 def fetch_latest_from(mail: imaplib.IMAP4_SSL, sender: str) -> dict | None:
+    """Used only on first run to set the baseline ID."""
     mail.select("INBOX")
     status, data = mail.search(None, f'FROM "{sender}"')
 
@@ -99,6 +100,42 @@ def fetch_latest_from(mail: imaplib.IMAP4_SSL, sender: str) -> dict | None:
         "body":    get_body(msg),
         "id":      latest_id.decode()
     }
+
+
+def fetch_all_new_from(mail: imaplib.IMAP4_SSL, sender: str, last_seen_id: str) -> list:
+    """Fetches ALL emails newer than last_seen_id — handles multiple new emails per run."""
+    mail.select("INBOX")
+    status, data = mail.search(None, f'FROM "{sender}"')
+
+    if status != "OK" or not data[0]:
+        return []
+
+    email_ids = data[0].split()
+
+    # Only keep IDs greater than last seen
+    new_ids = [eid for eid in email_ids if int(eid) > int(last_seen_id)]
+
+    if not new_ids:
+        return []
+
+    print(f"   📬 Found {len(new_ids)} new email(s) to process")
+
+    emails = []
+    for eid in new_ids:
+        status, msg_data = mail.fetch(eid, "(RFC822)")
+        if status != "OK":
+            continue
+        raw_email = msg_data[0][1]
+        msg       = email.message_from_bytes(raw_email)
+        emails.append({
+            "subject": decode_str(msg.get("Subject", "")),
+            "from":    msg.get("From", ""),
+            "date":    msg.get("Date", ""),
+            "body":    get_body(msg),
+            "id":      eid.decode()
+        })
+
+    return emails
 
 
 # ──────────────────────────────────────────
@@ -283,37 +320,40 @@ def update_supabase(parsed: dict) -> set:
 def main():
     print("🚀 Starting inbox check...")
 
-    mail   = connect()
-    result = fetch_latest_from(mail, TARGET_SENDER)
-    mail.logout()
-
-    if not result:
-        print("📭 No emails found from target sender.")
-        return
-
-    current_id   = result["id"]
+    mail         = connect()
     last_seen_id = get_last_seen_id()
 
     print(f"📌 Last seen ID : {last_seen_id or 'None (first run)'}")
-    print(f"📨 Current ID   : {current_id}")
 
-    # First ever run — just set the baseline, don't process
+    # First ever run — set baseline and exit
     if last_seen_id == "":
-        set_last_seen_id(current_id)
-        print("📌 First run — baseline set. Will detect new emails from next run.")
+        result = fetch_latest_from(mail, TARGET_SENDER)
+        mail.logout()
+        if result:
+            set_last_seen_id(result["id"])
+            print("📌 First run — baseline set. Will detect new emails from next run.")
+        else:
+            print("📭 No emails found from target sender.")
         return
 
-    # No new email since last run
-    if current_id == last_seen_id:
+    # Fetch all emails newer than last seen
+    new_emails = fetch_all_new_from(mail, TARGET_SENDER, last_seen_id)
+    mail.logout()
+
+    if not new_emails:
         print("📭 No new emails since last run. Nothing to do.")
         return
 
-    # New email detected!
-    print("\n📬 NEW EMAIL DETECTED!")
-    set_last_seen_id(current_id)
-    parsed             = parse_payout_email(result["body"])
-    validated_barcodes = update_supabase(parsed)
-    write_to_sheets(parsed, validated_barcodes)
+    print(f"\n📬 {len(new_emails)} NEW EMAIL(S) DETECTED!")
+
+    for result in new_emails:
+        print(f"\n─── Processing Email ID: {result['id']} ───")
+        set_last_seen_id(result["id"])
+        parsed             = parse_payout_email(result["body"])
+        validated_barcodes = update_supabase(parsed)
+        write_to_sheets(parsed, validated_barcodes)
+
+    print(f"\n🏁 Done — processed {len(new_emails)} email(s).")
 
 
 main()

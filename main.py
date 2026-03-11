@@ -298,7 +298,8 @@ def update_supabase(parsed: dict) -> set:
             .update({
                 "received_amount": sale_amount,
                 "balance":         0,
-                "status":          "paid"
+                "status":          "paid",
+                "payment_date":    parsed["payout_date"]  # ← NEW
             })
             .eq("id", row_id)
             .execute()

@@ -319,7 +319,8 @@ def update_supabase(parsed: dict) -> set:
 
 def main():
     print("🚀 Starting inbox check...")
-
+    print(f"SUPABASE URL: {SUPABASE_URL}")
+    
     mail         = connect()
     last_seen_id = get_last_seen_id()
 
@@ -357,3 +358,4 @@ def main():
 
 
 main()
+

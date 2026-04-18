@@ -11,7 +11,7 @@ from supabase import create_client, Client
 # --- CONFIG (from GitHub Actions Secrets) ---
 EMAIL_ACCOUNT   = os.environ["GMAIL_USER"]
 APP_PASSWORD    = os.environ["GMAIL_PASSWORD"]
-TARGET_SENDER   = "accounts@crepdogcrew.com"
+TARGET_SENDER   = "payments@crepdogcrew.com"
 IMAP_SERVER     = "imap.gmail.com"
 
 SUPABASE_URL    = os.environ["SUPABASE_URL"]
